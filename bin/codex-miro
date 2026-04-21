@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+resolve_token_from_claude_backup() {
+  ruby -rjson -e '
+home = ENV.fetch("HOME")
+paths = Dir["#{home}/.claude/backups/.claude.json.backup.*"].sort_by { |path| File.mtime(path) }.reverse
+
+paths.each do |path|
+  begin
+    config = JSON.parse(File.read(path))
+  rescue JSON::ParserError
+    next
+  end
+
+  token = config.dig("mcpServers", "miro", "env", "MIRO_ACCESS_TOKEN")
+  next if token.nil? || token.empty?
+
+  print token
+  exit 0
+end
+
+exit 1
+'
+}
+
+if [[ -z "${MIRO_ACCESS_TOKEN:-}" ]]; then
+  if ! MIRO_ACCESS_TOKEN="$(resolve_token_from_claude_backup)"; then
+    echo "MIRO_ACCESS_TOKEN is not set and no Claude backup with a Miro token was found." >&2
+    exit 1
+  fi
+
+  export MIRO_ACCESS_TOKEN
+fi
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_dir="$(cd "${script_dir}/.." && pwd)"
+
+exec node "${repo_dir}/build/index.js"
